@@ -55,38 +55,63 @@
                 <h2>WebAPI経由で人間の姿勢推定結果を取得する</h2>
             </div>
             <div class="hamburger" id="open_nav">
-                <img src="../static/images/hamburger.png" alt="">
+                <img src="./static/images/hamburger.png" alt="">
             </div>
         </header>
-    
+
         <main>
             <div class="container">
-                <input type="file" id="target">
+                <label for="input_image">入力画像</label>
+                <input type="file" accept="image/*" id="input_image" class="form-control">
+                <br>
+                <button type="submit" id="inference_button" class="btn btn-primary">推論</button>
+                <hr>
                 <div id="inference">
                     <!-- ダミーデータ -->
-                    <!-- <figure>
-                        <img src="" alt="">
-                        <figcaption>入力画像</figcaption>
-                    </figure>
-                    <figure>
-                        <img src="" alt="">
-                        <figcaption>姿勢推定結果</figcaption>
-                    </figure> -->
+                    <!-- <span>
+                        <figure>
+                            <img src="" alt="">
+                            <figcaption>入力画像</figcaption>
+                        </figure>
+                    </span>
+                    <span>
+                        <figure>
+                            <img src="" alt="">
+                            <figcaption>姿勢推定結果</figcaption>
+                        </figure>
+                    </span> -->
                 </div>
             </div>
         </main>
     </dev>
 
+    <!-- ドロワーナビゲーション -->
+    <div id="nav">
+        <div class="logo">
+            <img src="./static/images/openpose.jpeg" alt="">
+        </div>
+        <ul>
+            <li><a href="#">Home</a></li>
+            <li><a href="https://zhec.github.io">Zhe Cao</a></li>
+            <li><a href="https://github.com/ZheC/Realtime_Multi-Person_Pose_Estimation">PythonCode</a></li>
+            <li><a href="https://github.com/CMU-Perceptual-Computing-Lab/openpose">RealTime[C++]Lib</a></li>
+            <li><a href="#">お問い合わせ</a></li>
+        </ul>
+
+    </div>
+
+    <!-- Cookie認証 -->
     <div id="cookie_panel" class="row">
-        <p class="col-sm-7">当サイトではユーザーエクスペリエンス向上のためクッキーを使用しています。また、
-            匿名でアクセス状況のデータを収集しています。詳しい情報は当サイトのプライバシーポリシーを
-            ご覧ください。
+        <p class="col-sm-7">当サイトではユーザーエクスペリエンス向上のためクッキーを使用しています。
+            また、匿名でアクセス状況のデータを収集しています。
+            詳しい情報は当サイトのプライバシーポリシーをご覧ください。
         </p>
-        <button id="btn_cookie_agree" class="btn btn-primary col-sm-2">承認する</button>
-        <button id="btn_cookie_remove" class="btn btn-warning col-sm-2">削除</button>
+        <button id="btn_cookie_agree" class="btn btn-primary col-sm-2">承認</button>
+        <button id="btn_cookie_reject" class="btn btn-warning col-sm-2">拒否</button>
     </div>
 
     <div class="container">
+        <hr>
         <footer>
             <p>&copy; shinichi inoue</p>
         </footer>
