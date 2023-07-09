@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <!-- 文字セット -->
+    <meta charset="UTF-8">
+
+    <!-- レイアウト -->
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+
+    <!-- Webページの説明 -->
+    <meta name="description" content="Front end of human pose estimation">
+    <meta name="keywords" content="Human, Pose Estimation">
+
+    <!-- OGP設定 -->
+    <meta property="og:local" content="ja_JP" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Human Pose Estimation" />
+    <meta property="og:description" content="Front end of human pose estimation" />
+    <!-- <meta property="og:url" content="http:/localhost:80/your/path/to/url" /> -->
+    <meta property="og:site_name" content="Human Pose Estimation" />
+    <!-- <meta property="og:image" content="http:/localhost:80/your/path/to/ogp.png" /> -->
+
+    <!-- Bootstrap CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+
+    <!-- js.cookie https://www.jsdelivr.com/package/npm/js-cookie -->
+    <script src="https://cdn.jsdelivr.net/npm/js-cookie@3.0.5/dist/js.cookie.min.js"></script>
+
+    <!-- local CSS -->
+    <link rel="stylesheet" href="./static/css/style.css">
+
+    <!-- jQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
+
+    <!-- Vue.js CDN -->
+    <!-- <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script> -->
+
+
+    <!-- Title -->
+    <title>Test human pose estimation</title>
+
+    <!-- Icon -->
+    <!-- <link href="your/path/to/icon.png" rel="icon" type="image/png"> -->
+</head>
+
+<body>
+
+    <dev id="wrapper">
+        <header>
+            <div class="title-block">
+                <h1>Test human pose estimation</h1>
+                <hr>
+                <h2>WebAPI経由で人間の姿勢推定結果を取得する</h2>
+            </div>
+            <div class="hamburger" id="open_nav">
+                <img src="../static/images/hamburger.png" alt="">
+            </div>
+        </header>
+    
+        <main>
+            <div class="container">
+                <input type="file" id="target">
+                <div id="inference">
+                    <!-- ダミーデータ -->
+                    <!-- <figure>
+                        <img src="" alt="">
+                        <figcaption>入力画像</figcaption>
+                    </figure>
+                    <figure>
+                        <img src="" alt="">
+                        <figcaption>姿勢推定結果</figcaption>
+                    </figure> -->
+                </div>
+            </div>
+        </main>
+    </dev>
+
+    <div id="cookie_panel" class="row">
+        <p class="col-sm-7">当サイトではユーザーエクスペリエンス向上のためクッキーを使用しています。また、
+            匿名でアクセス状況のデータを収集しています。詳しい情報は当サイトのプライバシーポリシーを
+            ご覧ください。
+        </p>
+        <button id="btn_cookie_agree" class="btn btn-primary col-sm-2">承認する</button>
+        <button id="btn_cookie_remove" class="btn btn-warning col-sm-2">削除</button>
+    </div>
+
+    <div class="container">
+        <footer>
+            <p>&copy; shinichi inoue</p>
+        </footer>
+    </div><!-- container3 -->
+
+    <script src="./static/js/human_pose_estimation.js"></script>
+</body>
+
+</html>
