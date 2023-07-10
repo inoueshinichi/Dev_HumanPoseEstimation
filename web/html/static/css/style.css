@@ -1,3 +1,6 @@
+/* 他のCSSを追加 */
+@import url(sanitize.css);
+@import url('https://fonts.googleapis.com/css2?family=Roboto:ital@0;1&display=swap'); /* Roboto font */
 
 /* ドロワーナビゲーション */
 #nav {
@@ -69,19 +72,35 @@ header {
 }
 
 
+
 /* ボディ */
-#inference {
-    display: flex;
+#inference li {
+    list-style: none;
+    margin-top: 15px;
+    background-color: slategray;
+}
+
+li:first-of-type {
+    margin-top: 0px;
 }
 
 #inference figure {
     margin: 0;
 }
 
+#inference figcaption {
+    text-align: center;
+}
 
 #inference img {
-    max-width: 50%;
-    max-height: 50%;
+    max-width: 100%;
+    max-height: 100%;
+}
+
+#inference .pair_block {
+    display: flexbox;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 
