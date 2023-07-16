@@ -23,8 +23,12 @@ RUN pip install \
     torchvision \
     --index-url https://download.pytorch.org/whl/cpu
 
-WORKDIR /web_api_app
-COPY ./src/ /web_api_app/
+# opencv-python 4.8.0.74
+RUN pip install \
+    opencv-python==4.8.0.74
+
+WORKDIR /hpe_web_api_app
+COPY ./src/ /hpe_web_api_app/
 
 ENV APP_PORT 80
 

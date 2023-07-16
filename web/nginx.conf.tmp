@@ -24,7 +24,7 @@ http {
     keepalive_timeout  65;
 
     # ファイル一覧を有効化
-    autoindex on;
+    # autoindex on;
 
     # listen 443; ssl on; のように別々のディレクティブでも設定できる
     # 現行の版(>= v1.15.0)ではsslディレクティブは廃止されているので注意
@@ -33,9 +33,10 @@ http {
     # ssl_certificate_key  /path/to/cert.key; 
 
     server {
-        server_name tashiro-club.com;
+        server_name nginx;
         listen {{PORT}};
         charset UTF-8;
+        client_max_body_size 100M; # 1リクエスト 100MBまでを上限に受け取り許可
 
         location / {
             root /usr/share/nginx/html;
@@ -47,11 +48,7 @@ http {
         proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Forwarded-Server $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        location /api/v1.0/ {
-            proxy_pass {{APP_SERVER}};
-        }
-
-        location /api/pose_estimate/ {
+        location /api/v1/ {
             proxy_pass {{APP_SERVER}};
         }
     }

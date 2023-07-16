@@ -19,8 +19,14 @@ import threading
 import base64
 
 import redis
-import PIL.Image
+from PIL import (
+    Image,
+    ExifTags,
+)
 import numpy as np
+import scipy as sp
+# import cv2
+
 from flask import (
     Flask, 
     jsonify, 
@@ -80,69 +86,148 @@ app = Flask("rest-api app server")
 # 日本語を使えるように
 app.config['JSON_AS_ASCII'] = False
 
-API_VER = 'v1.0'
+API_VER = 'v1'
 DB_STORE_COUNT = 1000000 # 100万
 
 # POSTで公開
-@app.route("/api/{API_VER}/pose_estimate/predict", methods=["POST"])
-def predict():
+@app.route(f'/api/{API_VER}/predict/', methods=['POST'])
+def api_predict():
     # content_type: str = request.headers.get('Content-Type')
     # if content_type == 'application/json':
+
+    print('[STATUS] arrival request data')
 
     if not request.is_json:
         return error(400.4)
 
-    json_data = request.get_json() # POSTされたjsonを取得
-    json = json.loads(json_data) # jsonを辞書に変換
-    id: int = json['id']
-    hostname: str = json['host']
-    portname: str = json['port']
-    first_name: str = json['first_name']
-    last_name: str = json['last_name']
-    age: int = json['age']
-    gender: str = json['gender'] # '男':0, '女':1, 'その他':2
+    id: int = request.json['id']
+    hostname: str = request.json['host']
+    portname: str = request.json['port']
+    first_name: str = request.json['first_name']
+    last_name: str = request.json['last_name']
+    age: int = request.json['age']
+    gender: str = request.json['gender'] # '男':0, '女':1, 'その他':2
     gender_category = {
         0: '男',
         1: '女', 
         2: 'その他'
     }
 
+
     response_list = []
-    images: Any = json['images']
+    images: Any = request.json['images']
+    # print('request.json["images"]', images, flush=True)
+
     for ndx, content in enumerate(images):
-        mata = content['meta']
-        shape = mata['shape']
-        is_first_channel: bool = mata['first-channel']
-        img_str = content['data'] # base64 encoded image string
-        img_base64 = img_str.encode('utf-8') # base64 encoded binary
-        img_bytes = base64.decodebytes(img_base64) # raw binary
-        buffer = io.BytesIO(img_base64)
-        img_np = np.frombuffer(buffer=buffer.getvalue(), dtype=np.uint8)
+        meta = content['meta']
+        
+        # Image attributes
+        filename = meta['filename']
+        type = meta['type']
+        shape = tuple(meta['shape'])
+        print('filename', filename, flush=True)
+        print('type', type, flush=True)
+        print('shape', shape, flush=True)
+        channels = shape[0]
+        height = shape[1]
+        width = shape[2]
+
+        """ ネットワーク間のバイナリデータの送受信フロー
+            Local Host -> Binary -> Base64 -> UTF-8 -> Network -> UTF-8 -> Base64 -> Binary -> Remote Host
+            Base64: Base64エンコード方式の文字列 
+            UTF-8: UTF-8方式の文字列
+            文字列と文字コードの変換 : (Binary - (Encode) -> Base64/UTF-8 -> (Decode) -> Binary)
+        """
+        
+        # utf-8 str 
+        img_str = content['data'] # image file string (encoded with base64)
+
+        # utf-8 str -> base64 str
+        img_base64 = img_str.encode('utf-8') # base64 encoded str
+
+        # base64 str -> raw binary of image file
+        img_bytes = base64.decodebytes(img_base64) 
+
+        # raw binary image file -> pillow
+        img_pil = Image.open(io.BytesIO(img_bytes)) # (H,W,C)
+
+        # camera info
+        camera_info = {}
+        exif = img_pil.getexif()
+        for key in exif.keys():
+            tag = ExifTags.TAGS.get(key, key)
+            camera_info[tag] = exif[key]
+
+        def format_bytes_to_str(camera_info):
+            res = {}
+            for key, value in camera_info.items():
+                if isinstance(value, bytes):
+                    res[key] = "{}".format(value)
+                elif isinstance(value, dict):
+                    res[key] = format_bytes_to_str(value)
+                else:
+                    res[key] = value
+            return res
+        
+        camera_info = format_bytes_to_str(camera_info)
+        print('camera_info', camera_info, flush=True)
+
+        orient = camera_info['Orientation']
+        
+        # pil -> numpy
+        img_np = np.array(img_pil, dtype=np.uint8)
+        print('img_np.shape', img_np.shape, flush=True)
+
+        # (H,W,C) -> (C,H,W)
+        img_np = img_np.reshape(-1, height, width)
+        # img_np = img_np[:3] # until 3 chanells (RGB)
+
+        print('img_np.shape', img_np.shape, flush=True)
+
+        img_np = img_np[:3] # to RGB
 
         # numpy -> tensor
         in_tensor = torch.from_numpy(img_np)
-        in_tensor = in_tensor.view(*shape)
+        # in_tensor = in_tensor.view(*shape)
         in_tensor = in_tensor.to(torch.float32)
         in_tensor = (in_tensor - in_tensor.min()) / (in_tensor.max() - in_tensor.min()) # [0,255] -> [0,1]
 
-        # 推論処理
+        ###########
+        # 推論処理 #
+        ###########
 
-        buffer = io.BytesIO(bytearray(img_np)) # np.uint8
-        img_bytes = buffer.getvalue() # bytes
-        img_base64 = base64.encodebytes(img_bytes) # base64 encoded image binary
+        # (C,H,W) -> (H,W,C)
+        img_np = img_np.reshape(height, width, -1)
+
+        # numpy -> pil
+        img_pil = Image.fromarray(img_np)
+        
+        # pil -> raw binary of image file
+        img_bytes = io.BytesIO()
+        img_format = type.split('/')[1] # e.g. mime_type: 'image/jpeg' -> 'jpeg'
+        img_pil.save(img_bytes, format=img_format)
+        img_bytes = img_bytes.getvalue() # bytes
+
+        # raw binary of image file -> base64 str
+        img_base64 = base64.encodebytes(img_bytes) # base64 encoded image str
+
+        # base64 str -> utf-8
         img_str = img_base64.decode('utf-8') # base64 encoded image string
 
         json_element = {
-            'index' : ndx,
+            'index': ndx,
+            'filename': filename,
+            'type': type,
             'data': img_str
         }
 
         response_list.append(json_element)
 
+    res_data = {
+        'images': response_list
+    }
     
-    # json.dumps(,indent=4)
-
-    jsonify({"images": response_list})
+    return success(res_data)
 
 
 @app.route(f'/api/{API_VER}/keys/', methods=['GET'])
