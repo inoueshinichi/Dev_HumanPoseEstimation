@@ -17,9 +17,9 @@
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Human Pose Estimation" />
     <meta property="og:description" content="Front end of human pose estimation" />
-    <meta property="og:url" content="http:/localhost:8080/index.html"/>
+    <meta property="og:url" content="http:/localhost:8080/index.html" />
     <meta property="og:site_name" content="Human Pose Estimation" />
-    <meta property="og:image" content="./static/images/icon/TinyTank_Icon.png"/>
+    <meta property="og:image" content="./static/images/icon/TinyTank_Icon.png" />
 
     <!-- Bootstrap CDN -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
@@ -62,12 +62,30 @@
 
         <main>
             <div class="container">
+                <section class="name">
+                    <label for="input_first_name">氏名</label>
+                    <input type="text" id="input_first_name" class="form-control">
+                    <label for="input_last_name">お名前</label>
+                    <input type="text" id="input_last_name" class="form-control">
+                </section>
+                <section class="sensitive">
+                    <label for="input_age">ご年齢</label>
+                    <input type="number" id="input_age" class="form-control">
+                    <label for="input_gender">性別</label>
+                    <div class="gender_radio">
+                        <label><input type="radio" name="gender" id="gender_0" value="0">男性</label>
+                        <label><input type="radio" name="gender" id="gender_1" value="1">女性</label>
+                        <label><input type="radio" name="gender" id="gender_2" value="2">その他</label>
+                    </div>
+                </section>
+
+                
                 <label for="input_image">入力画像</label>
                 <input type="file" accept="image/*" id="input_image" class="form-control" multiple>
                 <br>
                 <button type="submit" id="inference_button" class="btn btn-primary">推論</button>
                 <hr>
-                <ul id="inference" >
+                <ul id="inference">
                     <!-- ダミーデータ -->
                     <!-- <li id="item_list_0">
                         <div class="pair_block">
@@ -98,8 +116,10 @@
         <ul>
             <li><a href="#">Home</a></li>
             <li><a href="https://zhec.github.io" target="_blank">Zhe Cao</a></li>
-            <li><a href="https://github.com/ZheC/Realtime_Multi-Person_Pose_Estimation" target="_blank">PythonCode</a></li>
-            <li><a href="https://github.com/CMU-Perceptual-Computing-Lab/openpose" target="_blank">RealTime[C++]Lib</a></li>
+            <li><a href="https://github.com/ZheC/Realtime_Multi-Person_Pose_Estimation" target="_blank">PythonCode</a>
+            </li>
+            <li><a href="https://github.com/CMU-Perceptual-Computing-Lab/openpose" target="_blank">RealTime[C++]Lib</a>
+            </li>
             <li><a href="#">お問い合わせ</a></li>
         </ul>
 

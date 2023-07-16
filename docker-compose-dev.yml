@@ -1,0 +1,53 @@
+version: '3.7'
+services:
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: ${DHUB_USER}/hpe_nginx_web_srv:${IMG_VER}
+    container_name: hpe_nginx_web_srv-con
+    depends_on:
+      - app
+    ports:
+    - 8080:80
+    networks:
+      - hpe_3layers_net
+    # restart: unless-stopped
+    environment:
+      APP_SERVER: http://app:${APP_PORT}
+    volumes:
+    - ./web/html:/usr/share/nginx/html
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: ${DHUB_USER}/hpe_sanic_app_srv:${IMG_VER}
+    container_name: hpe_api_app_srv-con
+    depends_on:
+      - db
+    networks:
+      - hpe_3layers_net
+    volumes:
+      - ./app/src:/hpe_web_api_app
+    stop_signal: SIGINT
+    # restart: unless-stopped
+    environment:
+      REDIS_HOST: db
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_DB: ${REDIS_DB}
+  db:
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    image: ${DHUB_USER}/hpe_redis_db_srv:${IMG_VER}
+    container_name: hpe_redis_db_srv-con
+    networks:
+      - hpe_3layers_net
+    # restart: unless-stopped
+    volumes:
+      - ./db/redis:/redis/data
+
+networks:
+  hpe_3layers_net:
+    driver: bridge
+
