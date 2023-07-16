@@ -96,34 +96,53 @@ document.getElementById('input_image').addEventListener(
 
             // Blob URLの作成
             let blobURL = window.URL.createObjectURL(fileList[i]);
+            console.log(`fileList[${i}], `, fileList[i]);
             console.log('input blobURL', blobURL);
 
-            // 画像サイズの取得
-            const image = new Image();
-            image.addEventListener('load', (event) => {
-                // 非同期処理
-                imageAttribList.push({
-                    'channel': 4, // RGBA (maybe)
-                    'height': image.naturalHeight,
-                    'width': image.naturalWidth,
-                    'type': image.type,
-                    'blob_url': image.src, // blobURL
-                    'file': fileList[i]
-                });
+            // 画像サイズの取得 (非同期)
+            // const image = new Image(); // <img src="">
+            // image.addEventListener('load', (event) => {
+            //     // 非同期処理
+            //     imageAttribList.push({
+            //         'channel': 4, // RGBA (maybe)
+            //         'height': image.naturalHeight,
+            //         'width': image.naturalWidth,
+            //         // 'filename': image.name, // filename
+            //         'blob_url': image.src, // blobURL
+            //     });
 
-                console.log('imageAttribList ', imageAttribList);
-            });
-            image.src = blobURL; // イベントトリガー
-            // await new Promise(resolve => image.load = () => resolve()); // 同期処理のため待機
-            // console.log("promise result", image.result);
-
-            // imageAttribList.push({
-            //     'channel': 4, // RGBA (maybe)
-            //     'height': image.naturalHeight,
-            //     'width': image.naturalWidth,
-            //     'blob_url': image.src, // blobURL
-            //     'file': fileList[i]
+            //     console.log('imageAttribList ', imageAttribList);
             // });
+            // image.src = blobURL; // イベントトリガー
+
+            // 画像データの取得(同期処理)
+            const loadImage = (src) => {
+                const image = new Image();
+                return new Promise((resolve, reject) => {
+                    image.onload = () => { // 成功
+                        resolve(image);
+                    };
+                    image.onerror = (e) => { // 失敗
+                        reject(error);
+                    };
+                    image.src = src; // トリガー
+                });
+            };
+
+            const image = await loadImage(blobURL).catch(e => {
+                console.log("[ERROR] image.onload");
+                return;
+            });
+
+            // console.log("image", image);
+
+            imageAttribList.push({
+                'channel': 4, // RGBA (maybe)
+                'height': image.height,
+                'width': image.width,
+                'filename': fileName,
+                'blob_url': image.src // blobURL
+            });
 
             
             // HTMLに書き出し (src属性にblob URLを指定)
@@ -166,7 +185,7 @@ document.getElementById('input_image').addEventListener(
             listRecord.setAttribute('id', `item_list_${i}`);
             listRecord.appendChild(blockDiv);
 
-            console.log('list', listRecord);
+            // console.log('list', listRecord);
             document.getElementById('inference').appendChild(listRecord);
         }
     }
@@ -191,6 +210,9 @@ document.getElementById('inference_button').addEventListener(
         console.log(`first: ${firstName}, last: ${lastName}, age: ${age}, gender: ${gender}`);
 
         let postData = {};
+        postData['id'] = 0;
+        postData['host'] = window.location.host;
+        postData['port'] = window.location.port;
         postData['first_name'] = firstName;
         postData['last_name'] = lastName;
         postData['age'] = age;
@@ -204,15 +226,17 @@ document.getElementById('inference_button').addEventListener(
             const channel = imageAttribList[i].channel;
             const height = imageAttribList[i].height;
             const width = imageAttribList[i].width;
-            const blobURL = imageAttribList[i].blob;
-            const filename = blobURL.name;
-            const filetype = blobURL.type;
+            const filename = imageAttribList[i].filename;
 
-            console.log('output blobURL', blobURL)
+            const blob = await fetch(imageAttribList[i].blob_url).then(r => r.blob()); // 同期処理 (blob-url to blob)
+            const filetype = blob.type;
+
+            // console.log('out blob', blob);
+            // console.log('out blob_url', imageAttribList[i].blob_url);
             
             // dataURLに変換(同期処理)
             const reader = new FileReader();
-            reader.readAsDataURL(blobURL);
+            reader.readAsDataURL(blob); // input: Blob or File
             await new Promise(resolve => reader.onload = () => resolve()); // 同期処理のため待機
 
             const base64DataURL = reader.result;

@@ -95,9 +95,8 @@ def predict():
     json_data = request.get_json() # POSTされたjsonを取得
     json = json.loads(json_data) # jsonを辞書に変換
     id: int = json['id']
-    hostname: str = json['hostname']
-    ipv4: str = json['ipv4']
-    ipv6: str = json['ipv6']
+    hostname: str = json['host']
+    portname: str = json['port']
     first_name: str = json['first_name']
     last_name: str = json['last_name']
     age: int = json['age']
