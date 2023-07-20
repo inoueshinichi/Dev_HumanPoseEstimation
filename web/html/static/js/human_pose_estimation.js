@@ -190,7 +190,7 @@ document.getElementById('input_image').addEventListener(
             // console.log("image", image);
 
             imageAttribList.push({
-                'channel': 3, // RGB (maybe)
+                // 'channel': 3, // RGB (maybe)
                 'height': image.height,
                 'width': image.width,
                 'filename': fileName,
@@ -298,7 +298,8 @@ document.getElementById('inference_button').addEventListener(
                 'meta': {
                     'filename': filename,
                     'type': filetype, // mime_type : 'image/png', 'image/jpeg', etc
-                    'shape': [channel, height, width]
+                    // 'shape': [channel, height, width]
+                    'shape': [height, width]
                 },
                 'data': base64Str
             };
@@ -405,7 +406,7 @@ document.getElementById('inference_button').addEventListener(
         };
 
         ajax.open('post',
-                  `/api/${API_VER}/predict/`, 
+                  `/api/${API_VER}/predict`, 
                   true); // 非同期: true
         ajax.setRequestHeader('Content-Type', 'application/json');
         ajax.responseType = 'json';

@@ -11,6 +11,7 @@ sys.path.append(module_parent_dir)
 
 import re
 import io
+import time
 import json
 import asyncio
 import itertools
@@ -22,6 +23,8 @@ import redis
 from PIL import (
     Image,
     ExifTags,
+    ImageDraw,
+    ImageFont,
 )
 import numpy as np
 import scipy as sp
@@ -32,8 +35,6 @@ from flask import (
     jsonify, 
     request,
 )
-
-
 
 import torch
 import torchvision
@@ -54,8 +55,8 @@ from log_conf import logging
 log = logging.getLogger(__name__)
 
 # log.setLevel(logging.WARN)
-log.setLevel(logging.INFO)
-# log.setLevel(logging.DEBUG)
+# log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
 
 app = Flask(__name__)
 
@@ -90,12 +91,12 @@ API_VER = 'v1'
 DB_STORE_COUNT = 1000000 # 100万
 
 # POSTで公開
-@app.route(f'/api/{API_VER}/predict/', methods=['POST'])
+@app.route(f'/api/{API_VER}/predict', methods=['POST'])
 def api_predict():
     # content_type: str = request.headers.get('Content-Type')
     # if content_type == 'application/json':
 
-    print('[STATUS] arrival request data')
+    log.info('[START] api_predict, URI: {}'.format(f'/api/{API_VER}/predict'))
 
     if not request.is_json:
         return error(400.4)
@@ -116,7 +117,8 @@ def api_predict():
 
     response_list = []
     images: Any = request.json['images']
-    # print('request.json["images"]', images, flush=True)
+    
+    # log.debug('requext.json["images"]', images, flush=True)
 
     for ndx, content in enumerate(images):
         meta = content['meta']
@@ -125,18 +127,24 @@ def api_predict():
         filename = meta['filename']
         type = meta['type']
         shape = tuple(meta['shape'])
-        print('filename', filename, flush=True)
-        print('type', type, flush=True)
-        print('shape', shape, flush=True)
-        channels = shape[0]
-        height = shape[1]
-        width = shape[2]
+
+        # print('filename', filename, flush=True)
+        # print('type', type, flush=True)
+        # print('shape', shape, flush=True)
+        log.debug('filename: {}'.format(filename))
+        log.debug('type: {}'.format(type))
+        log.debug('shape: {}'.format(shape))
+
+        # channels = shape[0]
+        height = shape[0]
+        width = shape[1]
 
         """ ネットワーク間のバイナリデータの送受信フロー
-            Local Host -> Binary -> Base64 -> UTF-8 -> Network -> UTF-8 -> Base64 -> Binary -> Remote Host
+            Local Host -> Binary -> Base64 -> (UTF-8 ->) Network -> (UTF-8 ->) Base64 -> Binary -> Remote Host
             Base64: Base64エンコード方式の文字列 
             UTF-8: UTF-8方式の文字列
             文字列と文字コードの変換 : (Binary - (Encode) -> Base64/UTF-8 -> (Decode) -> Binary)
+            Base64とUTF-8の文字コード変換は必要ないのでは???
         """
         
         # utf-8 str 
@@ -149,64 +157,154 @@ def api_predict():
         img_bytes = base64.decodebytes(img_base64) 
 
         # raw binary image file -> pillow
-        img_pil = Image.open(io.BytesIO(img_bytes)) # (H,W,C)
+        img_pil = Image.open(io.BytesIO(img_bytes)).convert("RGB") # (H,W,C) alpha値除外
+        info_pil = img_pil.info
+        log.debug('info_pil: {}'.format(info_pil))
+        format_pil = img_pil.format
+        log.debug('format_pil: {}'.format(format_pil))
 
-        # camera info
+
+        ############################################
+        # iOSで撮影した画像(Jpeg)は, 画像の縦横サイズ情報
+        # に対して, 実際の画像が90°回転してしまっている問題
+        # があるので対処する.                              
+        ############################################
+        # 画像情報の取得
         camera_info = {}
-        exif = img_pil.getexif()
-        for key in exif.keys():
-            tag = ExifTags.TAGS.get(key, key)
-            camera_info[tag] = exif[key]
+        exif = img_pil.getexif() # EXIFが画像情報を持つ対象属性
+        if exif is not None:
+            for key in exif.keys():
+                tag = ExifTags.TAGS.get(key, key)
+                camera_info[tag] = exif[key]
 
-        def format_bytes_to_str(camera_info):
-            res = {}
-            for key, value in camera_info.items():
-                if isinstance(value, bytes):
-                    res[key] = "{}".format(value)
-                elif isinstance(value, dict):
-                    res[key] = format_bytes_to_str(value)
-                else:
-                    res[key] = value
-            return res
+            # 整数から文字に変換
+            def format_bytes_to_str(camera_info):
+                res = {}
+                for key, value in camera_info.items():
+                    if isinstance(value, bytes):
+                        res[key] = "{}".format(value)
+                    elif isinstance(value, dict):
+                        res[key] = format_bytes_to_str(value)
+                    else:
+                        res[key] = value
+                return res
+    
+            # カメラに関するInformationgがあれば実行
+            camera_info = format_bytes_to_str(camera_info)
+            # print('camera_info', camera_info, flush=True)
+            log.debug('camera_info: {}'.format(camera_info))
+            if camera_info is not None and len(camera_info) != 0:
+
+                """回転情報 : Orientation
+                https://kapibara-sos.net/archives/658
+                状態
+                1: 無補正(No Affine)
+                2: 水平フリップ
+                3: 水平フリップ&垂直フリップ
+                4: 垂直フリップ
+                5: 水平フリップ&反時計回りに90°回転
+                6: 反時計回りに180°回転
+                7: 水平フリップ&時計回りに90°回転
+                8: 時計回りに90°回転
+
+                補正方法
+                1: なし
+                2: 0: Transpose.FLIP_LEFT_RIGHT
+                3: 3: Transpose.ROTATE_180
+                4: 1: Transpose.FLIP_TOP_BOTTOM
+                5: 5: Transpose.TRANSPOSE
+                6: 4: Transpose.ROTATE_270
+                7: 6: Transpose.TRANSVERSE
+                8: 2: Transpose.ROTATE_90
+
+                @warning Pillowには特定のExifタグのみを編集する機能は存在しない.
+                """
+                # 'Orientation'属性がない場合があるのでチェック
+                if 'Orientation' in camera_info.keys():
+                    orientation = camera_info['Orientation']
+                    if orientation > 1:
+                        transpose_to_valid = [0,3,1,5,4,6,2][orientation - 2]
+                        img_pil = img_pil.transpose(transpose_to_valid)
+
+        #########
+        # 仮の処理
+        #########
+        # ロゴを入れる
+        draw = ImageDraw.Draw(img_pil)
+        top = 0
+        left = 0
+        logo_width = width
+        right = left + logo_width if (left + logo_width) < width else width - 1
+        logo_height = int(height * 0.2)
+        bottom = top + logo_height if (top + logo_height) < height else height - 1
+        left_top = (left, top)
+        right_bottom = (right, bottom)
+
+        # 背景(黒ベタ)
+        draw.rectangle((left_top, right_bottom), fill=(0, 0, 0))
+
+        # 文字列
+        # font = ImageFont.truetype(font=None, size=24)
+        draw.text((0, 0), 'Tashiro Club', 'white', align='center')#, font=font)
         
-        camera_info = format_bytes_to_str(camera_info)
-        print('camera_info', camera_info, flush=True)
-
-        orient = camera_info['Orientation']
         
         # pil -> numpy
         img_np = np.array(img_pil, dtype=np.uint8)
-        print('img_np.shape', img_np.shape, flush=True)
+        # print('img_np.shape', img_np.shape, flush=True)
+        log.debug('img_np.shape: {}'.format(img_np.shape))
 
         # (H,W,C) -> (C,H,W)
         img_np = img_np.reshape(-1, height, width)
-        # img_np = img_np[:3] # until 3 chanells (RGB)
+        channels = img_np.shape[0]
 
-        print('img_np.shape', img_np.shape, flush=True)
+        # print('img_np.shape', img_np.shape, flush=True)
+        log.debug('img_np.shape: ({},{},{})'.format(channels, height, width))
 
-        img_np = img_np[:3] # to RGB
+        # Alpha値を除外する
+        img_np = img_np[:3] # until 3 chanells (RGB)
 
         # numpy -> tensor
         in_tensor = torch.from_numpy(img_np)
-        # in_tensor = in_tensor.view(*shape)
         in_tensor = in_tensor.to(torch.float32)
-        in_tensor = (in_tensor - in_tensor.min()) / (in_tensor.max() - in_tensor.min()) # [0,255] -> [0,1]
-
+        
         ###########
         # 推論処理 #
         ###########
+        out_tensor = predict_pose_estimate(in_tensor)
+
+        # tensor -> numpy
+        # img_np = out_tensor.numpy()
 
         # (C,H,W) -> (H,W,C)
         img_np = img_np.reshape(height, width, -1)
+        log.debug('(C,H,W)->(H,W,C): ({},{},{})'.format(
+            img_np.shape[0],
+            img_np.shape[1],
+            img_np.shape[2]
+            ))
+        
+        if channels == 4: # RGBA
+            # Alpha値を追加
+            alpha = np.ones((height, width, 1), dtype=np.uint8)
+            log.debug('Alpha: {}'.format(alpha.shape))
+            img_np = np.concatenate([alpha, img_np], axis=-1)
+            log.debug('Add alpha channels: {}'.format(img_np.shape))
 
         # numpy -> pil
-        img_pil = Image.fromarray(img_np)
+        # img_pil = Image.fromarray(img_np)
+        img_pil.frombytes(img_np.tobytes()) # 入力meta情報を持ったまま画像データのみ入れ替え
+
+        
         
         # pil -> raw binary of image file
-        img_bytes = io.BytesIO()
         img_format = type.split('/')[1] # e.g. mime_type: 'image/jpeg' -> 'jpeg'
+        img_bytes = io.BytesIO()
         img_pil.save(img_bytes, format=img_format)
-        img_bytes = img_bytes.getvalue() # bytes
+        img_bytes = img_bytes.getvalue() # bytes of image file
+
+        log.debug('img_pil info: {}'.format(img_pil.info))
+        log.debug('img_pil format: {}'.format(img_pil.format))
+
 
         # raw binary of image file -> base64 str
         img_base64 = base64.encodebytes(img_bytes) # base64 encoded image str
@@ -227,6 +325,9 @@ def api_predict():
         'images': response_list
     }
     
+
+    log.info('[END] api_predict, URI: {}'.format(f'/api/{API_VER}/predict'))
+
     return success(res_data)
 
 
@@ -292,6 +393,22 @@ def api_key(key):
     return func_dict[request.method]() # HTTPのAPIに応じてRedisとの仲介を行う
 
 
+# 404 レスポンスコード(アクセスデータが存在しない) ハンドラ
+@app.errorhandler(404)
+def api_not_found_error(error):
+    return jsonify({'error': "api not found", 'code': 404}), 404
+
+# 405 レスポンスコード(アクセス権限) ハンドラ
+@app.errorhandler(405)
+def method_not_allowed_error(error):
+    return jsonify({'error': "method not allowed", 'code': 405}), 405
+
+# 500 レスポンスコード(サーバー内部エラー) ハンドラ
+@app.errorhandler(500)
+def internal_server_error(error):
+    return jsonify({'error': 'server internal error', 'code': 500}), 500
+
+
 def isalnum(text):
     # 半角英数字で構成された文字列にマッチした場合, Trueを返す
     return re.match(r'^[a-zA-Z0-9]+$', text) is not None
@@ -312,20 +429,42 @@ def error(code):
     return jsonify({'error': message[code], 'code': int(code)}), int(code)
 
 
-# 404 レスポンスコード(アクセスデータが存在しない) ハンドラ
-@app.errorhandler(404)
-def api_not_found_error(error):
-    return jsonify({'error': "api not found", 'code': 404}), 404
+def transform_preprocess(x_tensor: torch.Tensor) -> torch.Tensor:
+    """入力画像の前処理とデータ拡張
 
-# 405 レスポンスコード(アクセス権限) ハンドラ
-@app.errorhandler(405)
-def method_not_allowed_error(error):
-    return jsonify({'error': "method not allowed", 'code': 405}), 405
+    Args:
+        x_tensor (torch.Tensor): 入力画像 RGB(3,H,W)
 
-# 500 レスポンスコード(サーバー内部エラー) ハンドラ
-@app.errorhandler(500)
-def internal_server_error(error):
-    return jsonify({'error': 'server internal error', 'code': 500}), 500
+    Returns:
+        torch.Tensor: 処理画像 RGB(3,H,W)
+    """
+
+    # 正規化
+    in_tensor = (x_tensor - x_tensor.min()) / (x_tensor.max() - x_tensor.min()) # [0,255] -> [0,1]
+
+    # 標準化
+
+    # 色々やる...
+
+    return in_tensor
+
+
+def predict_pose_estimate(x_tensor: torch.Tensor) -> torch.Tensor:
+    """OpenPoseによる姿勢推定処理
+
+    Args:
+        x_tensor (torch.Tensor): 入力画像 RGB(3,H,W)
+
+    Returns:
+        torch.Tensor: 推定結果画像 RGB(3,H,W)
+    """
+    x_tensor = transform_preprocess(x_tensor)
+
+    # 推論 : OpenPoseは10fps程度の処理速度なので, 
+    # ここでは100msスリープを入れてレスポンスタイムを擬似的に作る
+    time.sleep(0.1) # 100ms
+
+    return x_tensor
 
 
 if __name__ == "__main__":
