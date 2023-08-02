@@ -16,13 +16,20 @@ RUN pip install \
     scipy==1.11.1 \
     pillow==10.0.0
 
-# Pytorch 2.0
-# torchvision
+# Pytorch 2.0.0
+# torchvision 0.15
 RUN pip install \
-    torch \
-    torchvision \
+    torch==2.0.0 \
+    torchvision==0.15 \
     --index-url https://download.pytorch.org/whl/cpu
 
+# NOT install full Tensorflow 2.13.0 framework, only install packages for Tensorflow Lite
+# TFLite Runtime 2.13.0
+# TFLite Support 0.4.4
+RUN pip install \
+    tflite-runtime==2.13.0 \
+    tflite-support==0.4.4
+    
 # opencv-python 4.8.0.74
 RUN pip install \
     opencv-python==4.8.0.74
