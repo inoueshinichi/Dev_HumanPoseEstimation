@@ -1,6 +1,5 @@
 """姿勢推定用のWebAPIサーバー
 """
-from email.charset import BASE64
 import os
 import sys
 
@@ -10,7 +9,6 @@ print("module_parent_dir", module_parent_dir)
 sys.path.append(module_parent_dir)
 
 import re
-import io
 import time
 import json
 import asyncio
@@ -30,15 +28,46 @@ import numpy as np
 import scipy as sp
 # import cv2
 
+from type_hint import *
+
+pose_estimation_model = "PoseNet"
+
+if pose_estimation_model == "PoseNet":
+    # PoseNet
+    from posenet.runtime_predict import (
+        PoseNetPredictor,
+        PoseNetHumanPoseKeypoints,
+    )
+else:
+    # OpenPose
+    # from openpose.runtime_predict import (
+    #     OpenPosePredictor,
+    #     OpenPoseHumanPoseKeypoints,
+    # )
+    pass
+
+
+########### Logging ###########
+from log_conf import logging
+
+log = logging.getLogger(__name__)
+# log.setLevel(logging.WARN)
+# log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
+
+
+########### Pose Estimation Model ############
+pose_estimation = PoseNetPredictor()
+pose_estimation.init_model()
+
+########### Flask ###########
 from flask import (
     Flask, 
     jsonify, 
     request,
 )
 
-import torch
-import torchvision
-
+# ### sanic ###
 # import sanic
 # from sanic import Sanic
 # from sanic.response import (
@@ -48,19 +77,18 @@ import torchvision
 # from sanic.log import logger
 # from sanic.exceptions import ServerError
 
-
-from type_hint import *
-from log_conf import logging
-
-log = logging.getLogger(__name__)
-
-# log.setLevel(logging.WARN)
-# log.setLevel(logging.INFO)
-log.setLevel(logging.DEBUG)
-
 app = Flask(__name__)
 
+# REST_API server
+app = Flask("rest-api app server")
 
+# 日本語を使えるように
+app.config['JSON_AS_ASCII'] = False
+
+# apiサーバーのバージョン
+API_VER = 'v1'
+
+########### Redis kvs ###########
 # Redis db conf
 REDIS_HOST: str = os.environ['REDIS_HOST']
 REDIS_PORT: int = int(os.environ['REDIS_PORT'])
@@ -81,14 +109,8 @@ print('Redis db server: ', REDIS)
 # App port (for this REST_API server)
 APP_PORT = int(os.environ['APP_PORT'])
 
-# REST_API server
-app = Flask("rest-api app server")
-
-# 日本語を使えるように
-app.config['JSON_AS_ASCII'] = False
-
-API_VER = 'v1'
 DB_STORE_COUNT = 1000000 # 100万
+
 
 # POSTで公開
 @app.route(f'/api/{API_VER}/predict', methods=['POST'])
@@ -247,42 +269,25 @@ def api_predict():
         # font = ImageFont.truetype(font=None, size=24)
         draw.text((0, 0), 'Tashiro Club', 'white', align='center')#, font=font)
         
-        
         # pil -> numpy
         img_np = np.array(img_pil, dtype=np.uint8)
         # print('img_np.shape', img_np.shape, flush=True)
         log.debug('img_np.shape: {}'.format(img_np.shape))
 
-        # (H,W,C) -> (C,H,W)
-        img_np = img_np.reshape(-1, height, width)
-        channels = img_np.shape[0]
-
-        # print('img_np.shape', img_np.shape, flush=True)
-        log.debug('img_np.shape: ({},{},{})'.format(channels, height, width))
+        # チャネルを取得
+        channels = img_np.shape[-1] # (H,W,C)
 
         # Alpha値を除外する
         img_np = img_np[:3] # until 3 chanells (RGB)
 
-        # numpy -> tensor
-        in_tensor = torch.from_numpy(img_np)
-        in_tensor = in_tensor.to(torch.float32)
-        
         ###########
         # 推論処理 #
         ###########
-        out_tensor = predict_pose_estimate(in_tensor)
+        if pose_estimation_model == "PoseNet":
+            dst_img = pose_estimation.predict(img_np)
 
-        # tensor -> numpy
-        # img_np = out_tensor.numpy()
 
-        # (C,H,W) -> (H,W,C)
-        img_np = img_np.reshape(height, width, -1)
-        log.debug('(C,H,W)->(H,W,C): ({},{},{})'.format(
-            img_np.shape[0],
-            img_np.shape[1],
-            img_np.shape[2]
-            ))
-        
+           
         if channels == 4: # RGBA
             # Alpha値を追加
             alpha = np.ones((height, width, 1), dtype=np.uint8)
@@ -429,42 +434,25 @@ def error(code):
     return jsonify({'error': message[code], 'code': int(code)}), int(code)
 
 
-def transform_preprocess(x_tensor: torch.Tensor) -> torch.Tensor:
-    """入力画像の前処理とデータ拡張
+
+
+
+
+
+
+def predict_by_posenet(src_img: np.ndarray) -> np.ndarray:
+    """PoseNet(Tensorflow Lite)による人物姿勢推定
 
     Args:
-        x_tensor (torch.Tensor): 入力画像 RGB(3,H,W)
+        src_img (np.ndarray): 入力画像 (3,H,W)
 
     Returns:
-        torch.Tensor: 処理画像 RGB(3,H,W)
+        np.ndarray: 出力画像 (3,H,W)
     """
+    # numpy -> tensor
 
-    # 正規化
-    in_tensor = (x_tensor - x_tensor.min()) / (x_tensor.max() - x_tensor.min()) # [0,255] -> [0,1]
+    # 推論
 
-    # 標準化
-
-    # 色々やる...
-
-    return in_tensor
-
-
-def predict_pose_estimate(x_tensor: torch.Tensor) -> torch.Tensor:
-    """OpenPoseによる姿勢推定処理
-
-    Args:
-        x_tensor (torch.Tensor): 入力画像 RGB(3,H,W)
-
-    Returns:
-        torch.Tensor: 推定結果画像 RGB(3,H,W)
-    """
-    x_tensor = transform_preprocess(x_tensor)
-
-    # 推論 : OpenPoseは10fps程度の処理速度なので, 
-    # ここでは100msスリープを入れてレスポンスタイムを擬似的に作る
-    time.sleep(0.1) # 100ms
-
-    return x_tensor
 
 
 if __name__ == "__main__":
