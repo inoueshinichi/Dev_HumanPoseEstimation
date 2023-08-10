@@ -57,8 +57,8 @@ log.setLevel(logging.DEBUG)
 
 
 ########### Pose Estimation Model ############
-pose_estimation = PoseNetPredictor()
-pose_estimation.init_model()
+# pose_estimation = PoseNetPredictor()
+# pose_estimation.init_model()
 
 ########### Flask ###########
 from flask import (
@@ -283,8 +283,8 @@ def api_predict():
         ###########
         # 推論処理 #
         ###########
-        if pose_estimation_model == "PoseNet":
-            dst_img = pose_estimation.predict(img_np)
+        # if pose_estimation_model == "PoseNet":
+        #     dst_img = pose_estimation.predict(img_np)
 
 
            

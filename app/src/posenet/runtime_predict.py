@@ -222,9 +222,15 @@ class PoseNetPredictor:
         raw_offset = np.squeeze(raw_offset) # (N,C,H,W) -> (C,H,W)
 
         # 関節点の取得
-        keypoints = self._build_keypoints(raw_heatmap,
-                                          raw_offset,
-                                          )
+        keypoints_with_scores = self._build_keypoints(raw_heatmap,
+                                                      raw_offset,
+                                                     )
+        keypoints = self._person_from_keypoints_with_scores(keypoints_with_scores,
+                                                            img_height,
+                                                            img_width,
+                                                            )
+
+        
         
         return dst_img, keypoints
     
