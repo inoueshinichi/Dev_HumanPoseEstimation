@@ -115,13 +115,14 @@ DB_STORE_COUNT = 1000000 # 100万
 # POSTで公開
 @app.route(f'/api/{API_VER}/predict', methods=['POST'])
 def api_predict():
-    # content_type: str = request.headers.get('Content-Type')
-    # if content_type == 'application/json':
-
+    
     log.info('[START] api_predict, URI: {}'.format(f'/api/{API_VER}/predict'))
 
-    if not request.is_json:
+    content_type: str = request.headers.get('Content-Type')
+    if content_type != 'application/json':
         return error(400.4)
+    # if not request.is_json:
+    #     return error(400.4)
 
     id: int = request.json['id']
     hostname: str = request.json['host']
@@ -162,11 +163,10 @@ def api_predict():
         width = shape[1]
 
         """ ネットワーク間のバイナリデータの送受信フロー
-            Local Host -> Binary -> Base64 -> (UTF-8 ->) Network -> (UTF-8 ->) Base64 -> Binary -> Remote Host
+            Local Host -> Binary -> Base64 -> UTF-8 -> Network -> UTF-8 -> Base64 -> Binary -> Remote Host
             Base64: Base64エンコード方式の文字列 
             UTF-8: UTF-8方式の文字列
             文字列と文字コードの変換 : (Binary - (Encode) -> Base64/UTF-8 -> (Decode) -> Binary)
-            Base64とUTF-8の文字コード変換は必要ないのでは???
         """
         
         # utf-8 str 
@@ -286,8 +286,6 @@ def api_predict():
         # if pose_estimation_model == "PoseNet":
         #     dst_img = pose_estimation.predict(img_np)
 
-
-           
         if channels == 4: # RGBA
             # Alpha値を追加
             alpha = np.ones((height, width, 1), dtype=np.uint8)
@@ -299,8 +297,6 @@ def api_predict():
         # img_pil = Image.fromarray(img_np)
         img_pil.frombytes(img_np.tobytes()) # 入力meta情報を持ったまま画像データのみ入れ替え
 
-        
-        
         # pil -> raw binary of image file
         img_format = type.split('/')[1] # e.g. mime_type: 'image/jpeg' -> 'jpeg'
         img_bytes = io.BytesIO()

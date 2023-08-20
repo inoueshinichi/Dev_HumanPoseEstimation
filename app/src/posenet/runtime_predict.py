@@ -200,12 +200,9 @@ class PoseNetPredictor:
 
         img_height, img_width, _ = src_img.shape
 
+        # 前処理
         in_tensor = self._preprocess(src_img)
         
-        # # Create a TensorImage object from the RGB image.
-        # src_img = src_img.transpose(2,0,1) # (C,H,W) -> (H,W,C)
-        # in_tensor = vision.TensorImage.create_from_array(src_img)
-
         
         # 前処理済みの画像を入力
         self._interpreter.set_tensor(self._input_index, in_tensor)
@@ -213,7 +210,7 @@ class PoseNetPredictor:
         # 推論
         self._interpreter.invoke()
 
-        # インタプリタ(モデル)から出力データを抽出
+        # モデル(計算グラフ)から出力データを抽出
         raw_heatmap = self._interpreter.get_tensor(self._output_heatmap_index)
         raw_offset = self._interpreter.get_tensor(self._output_offset_index)
 
