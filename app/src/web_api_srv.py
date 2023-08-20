@@ -16,6 +16,7 @@ import itertools
 import functools
 import threading
 import base64
+import io
 
 import redis
 from PIL import (
@@ -25,40 +26,54 @@ from PIL import (
     ImageFont,
 )
 import numpy as np
-import scipy as sp
-# import cv2
+import cv2
 
 from type_hint import *
 
-pose_estimation_model = "PoseNet"
-
-if pose_estimation_model == "PoseNet":
-    # PoseNet
-    from posenet.runtime_predict import (
-        PoseNetPredictor,
-        PoseNetHumanPoseKeypoints,
-    )
-else:
-    # OpenPose
-    # from openpose.runtime_predict import (
-    #     OpenPosePredictor,
-    #     OpenPoseHumanPoseKeypoints,
-    # )
-    pass
-
-
 ########### Logging ###########
 from log_conf import logging
-
 log = logging.getLogger(__name__)
 # log.setLevel(logging.WARN)
 # log.setLevel(logging.INFO)
 log.setLevel(logging.DEBUG)
 
 
-########### Pose Estimation Model ############
-# pose_estimation = PoseNetPredictor()
-# pose_estimation.init_model()
+########### Neural Network ###########
+# PoseNet : Single human skelton
+# MoveNet : Multiple human skeltons
+# OpenPose : Multiple human skeltons
+pose_estimation_model = "PoseNet" # "MoveNet" # "OpenPose"
+
+pose_estimation : Any = None
+if pose_estimation_model == "PoseNet":
+    from posenet.runtime_predict import (
+        PoseNet,
+        Point,
+        KeyPoint,
+        BBox,
+        Person,
+    )
+
+    model_path : str = os.environ['POSENET_MODEL']
+    keypoints_threshold : float = 0.1
+    argv = [
+        f"--model-path={model_path}", 
+        f"--keypoints-threshold={keypoints_threshold}"
+    ]
+    
+    pose_estimation = PoseNet(argv)
+
+elif pose_estimation_model == "MoveNet":
+    raise ImportError("Can't import MoveNet module.")
+
+else:
+    # OpenPose
+    raise ImportError("Can't import OpenPose module.")
+
+from visualizer import (
+    visualize,
+)
+
 
 ########### Flask ###########
 from flask import (
@@ -87,6 +102,7 @@ app.config['JSON_AS_ASCII'] = False
 
 # apiサーバーのバージョン
 API_VER = 'v1'
+
 
 ########### Redis kvs ###########
 # Redis db conf
@@ -136,7 +152,6 @@ def api_predict():
         1: '女', 
         2: 'その他'
     }
-
 
     response_list = []
     images: Any = request.json['images']
@@ -251,51 +266,62 @@ def api_predict():
         #########
         # 仮の処理
         #########
-        # ロゴを入れる
-        draw = ImageDraw.Draw(img_pil)
-        top = 0
-        left = 0
-        logo_width = width
-        right = left + logo_width if (left + logo_width) < width else width - 1
-        logo_height = int(height * 0.2)
-        bottom = top + logo_height if (top + logo_height) < height else height - 1
-        left_top = (left, top)
-        right_bottom = (right, bottom)
+        # # ロゴを入れる
+        # draw = ImageDraw.Draw(img_pil)
+        # top = 0
+        # left = 0
+        # logo_width = width
+        # right = left + logo_width if (left + logo_width) < width else width - 1
+        # logo_height = int(height * 0.2)
+        # bottom = top + logo_height if (top + logo_height) < height else height - 1
+        # left_top = (left, top)
+        # right_bottom = (right, bottom)
 
-        # 背景(黒ベタ)
-        draw.rectangle((left_top, right_bottom), fill=(0, 0, 0))
+        # # 背景(黒ベタ)
+        # draw.rectangle((left_top, right_bottom), fill=(0, 0, 0))
 
-        # 文字列
-        # font = ImageFont.truetype(font=None, size=24)
-        draw.text((0, 0), 'Tashiro Club', 'white', align='center')#, font=font)
+        # # 文字列
+        # # font = ImageFont.truetype(font=None, size=24)
+        # draw.text((0, 0), 'Tashiro Club', 'white', align='center')#, font=font)
         
         # pil -> numpy
         img_np = np.array(img_pil, dtype=np.uint8)
         # print('img_np.shape', img_np.shape, flush=True)
         log.debug('img_np.shape: {}'.format(img_np.shape))
 
+        # img_src = img_np.copy()
+
         # チャネルを取得
         channels = img_np.shape[-1] # (H,W,C)
 
         # Alpha値を除外する
-        img_np = img_np[:3] # until 3 chanells (RGB)
+        img_alpha : Optional[np.ndarray] = None
+        if channels == 4:
+            img_alpha = img_np[:,:,-1].copy()
+        img_np = img_np[:,:,:3] # until 3 chanells (RGB)
 
         ###########
         # 推論処理 #
         ###########
-        # if pose_estimation_model == "PoseNet":
-        #     dst_img = pose_estimation.predict(img_np)
+        img_out : Optional[np.ndarray] = None
+        img_dst : Optional[np.ndarray] = None
+        if pose_estimation_model == "PoseNet":
+            img_out = predict_by_posenet(img_np)
+        elif pose_estimation_model == "OpenPose":
+            img_out = predict_by_openpose(img_np)
 
         if channels == 4: # RGBA
             # Alpha値を追加
-            alpha = np.ones((height, width, 1), dtype=np.uint8)
-            log.debug('Alpha: {}'.format(alpha.shape))
-            img_np = np.concatenate([alpha, img_np], axis=-1)
-            log.debug('Add alpha channels: {}'.format(img_np.shape))
+            # img_alpha = np.ones((height, width, 1), dtype=np.uint8)
+            log.debug('Alpha: {}'.format(img_alpha.shape))
+            img_dst = np.concatenate([img_out, img_alpha], axis=-1)
+            log.debug('Add alpha channels: {}'.format(img_dst.shape))
+        else:
+            img_dst = img_out
 
         # numpy -> pil
-        # img_pil = Image.fromarray(img_np)
-        img_pil.frombytes(img_np.tobytes()) # 入力meta情報を持ったまま画像データのみ入れ替え
+        img_pil.frombytes(img_dst.tobytes()) # 入力meta情報を持ったまま画像データのみ入れ替え
+        # img_pil = Image.fromarray(img_np) # このパターンは写真情報が無いので使わない
 
         # pil -> raw binary of image file
         img_format = type.split('/')[1] # e.g. mime_type: 'image/jpeg' -> 'jpeg'
@@ -305,7 +331,6 @@ def api_predict():
 
         log.debug('img_pil info: {}'.format(img_pil.info))
         log.debug('img_pil format: {}'.format(img_pil.format))
-
 
         # raw binary of image file -> base64 str
         img_base64 = base64.encodebytes(img_bytes) # base64 encoded image str
@@ -430,24 +455,41 @@ def error(code):
     return jsonify({'error': message[code], 'code': int(code)}), int(code)
 
 
-
-
-
-
-
-
-def predict_by_posenet(src_img: np.ndarray) -> np.ndarray:
+def predict_by_posenet(img_src: np.ndarray) -> np.ndarray:
     """PoseNet(Tensorflow Lite)による人物姿勢推定
 
     Args:
-        src_img (np.ndarray): 入力画像 (3,H,W)
+        img_src (np.ndarray): 入力画像 (H,W,C)
 
     Returns:
-        np.ndarray: 出力画像 (3,H,W)
+        np.ndarray: 出力画像 (H,W,C)
     """
-    # numpy -> tensor
-
+    
     # 推論
+    person : Person = pose_estimation.predict(img_src)
+    print("[DEBUG] ", person)
+
+    # キーポイントに従って, 四肢を描画する
+    img_dst = img_src.copy()
+
+    img_dst = visualize(img_dst, [person], (255, 0, 0))
+
+    return img_dst
+
+
+def predict_by_openpose(img_src: np.ndarray) -> np.ndarray:
+    """OpenPose(Tensorflow Lite)による人物姿勢推定
+
+    Args:
+        img_src (np.ndarray): 入力画像 (H,W,C)
+
+    Returns:
+        np.ndarray: 入力画像 (H,W,C)
+    """
+    # nothing
+    return img_src
+
+
 
 
 

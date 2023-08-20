@@ -5,6 +5,12 @@ From python:3.9.17-slim
 
 Label author="inoue.shinichi.1800@gmail.com"
 
+RUN apt-get update && apt-get upgrade -y
+# OpenGL? https://cocoinit23.com/docker-opencv-importerror-libgl-so-1-cannot-open-shared-object-file/
+RUN apt-get install -y \
+    libgl1-mesa-dev \
+    libglib2.0-0
+
 # Flask 2.3.2 (Python >= 3.8)
 # Sanic 23.3.0
 # Redis 3.3.8
@@ -43,6 +49,9 @@ ENV APP_PORT 80
 ENV REDIS_HOST 127.0.0.1
 ENV REDIS_PORT 6379
 ENV REDIS_DB 0
+
+# Deep learning model path
+ENV POSENET_MODEL /hpe_web_api_app/posenet/model/posenet_mobilenet_v1_100_257x257_multi_kpt_stripped.tflite
 
 # Test connection to redis db
 CMD ["python", "-u", "/hpe_web_api_app/web_api_srv.py"]

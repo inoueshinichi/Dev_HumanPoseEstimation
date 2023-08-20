@@ -15,10 +15,11 @@ import argparse
 import datetime
 # import hashlib
 from collections import namedtuple
+import enum
 
 ########### 3rd-parth ###########
 import numpy as np
-# import cv2
+import cv2
 
 # pylint: disable=g-import-not-at-top
 try:
@@ -31,46 +32,85 @@ except ImportError:
 # pylint: enable=g-import-not-at-top
 
 
-from tflite_support.task import core
-from tflite_support.task import processor
-from tflite_support.task import vision
+# from tflite_support.task import core
+# from tflite_support.task import processor
+# from tflite_support.task import vision
 
 ########### Own ###########
 from type_hint import *
 
-########### Logging ###########
 from log_conf import logging
-
 log = logging.getLogger(__name__)
 # log.setLevel(logging.WARN)
 # log.setLevel(logging.INFO)
 log.setLevel(logging.DEBUG)
 
 
-PoseNetHumanPoseKeypoints = namedtuple(
-    'HumanPoseKeypoints',
-    [
-        'nose',           # 0
-        'left_eye',       # 1
-        'right_eye',      # 2
-        'left_ear',       # 3
-        'right_ear',      # 4
-        'left_shoulder',  # 5
-        'right_shoulder', # 6
-        'left_elbow',     # 7
-        'right_elbow',    # 8
-        'left_wrist',     # 9
-        'right_wrist',    # 10
-        'left_hip',       # 11
-        'right_hip',      # 12
-        'left_knee',      # 13
-        'right_knee',     # 14
-        'left_ankle',     # 15
-        'right_ankle'     # 16
-    ]
-)
+class BodyPart(enum.Enum):
+  """Enum representing human body keypoints detected by pose estimation models.
+  'PoseNetOfKeypoints',
+  [
+      'nose',           # 0
+      'left_eye',       # 1
+      'right_eye',      # 2
+      'left_ear',       # 3
+      'right_ear',      # 4
+      'left_shoulder',  # 5
+      'right_shoulder', # 6
+      'left_elbow',     # 7
+      'right_elbow',    # 8
+      'left_wrist',     # 9
+      'right_wrist',    # 10
+      'left_hip',       # 11
+      'right_hip',      # 12
+      'left_knee',      # 13
+      'right_knee',     # 14
+      'left_ankle',     # 15
+      'right_ankle'     # 16
+  ]
+  """
+  NOSE = 0
+  LEFT_EYE = 1
+  RIGHT_EYE = 2
+  LEFT_EAR = 3
+  RIGHT_EAR = 4
+  LEFT_SHOULDER = 5
+  RIGHT_SHOULDER = 6
+  LEFT_ELBOW = 7
+  RIGHT_ELBOW = 8
+  LEFT_WRIST = 9
+  RIGHT_WRIST = 10
+  LEFT_HIP = 11
+  RIGHT_HIP = 12
+  LEFT_KNEE = 13
+  RIGHT_KNEE = 14
+  LEFT_ANKLE = 15
+  RIGHT_ANKLE = 16
 
-class PoseNetPredictor:
+class Point(NamedTuple):
+    """A point in 2D space."""
+    x : float
+    y : float
+
+class BBox(NamedTuple):
+    ps : Point
+    pe : Point
+
+class KeyPoint(NamedTuple):
+  """A detected human keypoint."""
+  body_part: BodyPart
+  coordinate: Point
+  score: float
+
+class Person(NamedTuple):
+    keypoints : List[KeyPoint]
+    bounding_box : BBox
+    score : float
+    id : Optional[int] = None
+
+class PoseNet:
+    """Single Pose Estimation Model (One human)
+    """
 
     def __init__(self,
                  sys_argv=None,
@@ -96,20 +136,11 @@ class PoseNetPredictor:
                             help='What to model file path to use.',
                             action='store',
                             )
-        
-        parser.add_argument('--weights-path',
-                            help='What to weights file path to use.',
-                            action='store',
-                            )
-        
-        parser.add_argument('--width',
-                            help='What to width of input image.',
-                            type=int,
-                            )
-        
-        parser.add_argument('--height',
-                            help='What to height of input image.',
-                            type=int,
+
+        parser.add_argument('--keypoints-threshold',
+                            help='What to keypoint threshold for human joints.',
+                            default=0.1,
+                            type=float,
                             )
         
         parser.add_argument('comment',
@@ -122,19 +153,18 @@ class PoseNetPredictor:
         self.cli_args = parser.parse_args(sys_argv)
 
         # Model file
+        print(f"[DEBUG]: model_path={self.cli_args.model_path}")
         _, ext = os.path.splitext(self.cli_args.model_path)
-        if ext is not 'tflite':
+        print(f"[DEBUG]: ext={ext}")
+        if ext != '.tflite':
             raise ValueError(f'Extension of filename must be tflite. Given is {ext}.')
-
-        # Image properies
-        self.width = self.cli_args.width
-        self.height = self.cli_args.height
-
+        
         # モデルの初期化
         self.init_model()
 
         self.time_str = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')
         print("{} setting datetime: {}", __class__.__name__, self.time_str)
+
 
     def init_model(self):
         """モデルの初期化
@@ -145,26 +175,27 @@ class PoseNetPredictor:
 
         # Initialize model
         interpreter = Interpreter(model_path=self.cli_args.model_path, 
-                                  num_threads=self.cli_args.num_worker,
+                                  num_threads=self.cli_args.num_workers,
                                   )
         interpreter.allocate_tensors()
 
         # 入力形状
         self._input_index = interpreter.get_input_details()[0]['index']
         # self._input_channels = interpreter.get_input_details()[0]['shape'][0]
-        self._input_height = interpreter.get_input_details()[0]['shape'][1]
-        self._input_width = interpreter.get_input_details()[0]['shape'][2]
+        self._input_height = interpreter.get_input_details()[0]['shape'][1] # モデル受付height
+        self._input_width = interpreter.get_input_details()[0]['shape'][2]  # モデル受付width
 
         # 出力形状
         self._output_heatmap_index = interpreter.get_output_details()[0]['index']
         self._output_offset_index = interpreter.get_output_details()[1]['index']
 
+        # 計算グラフ
         self._interpreter = interpreter
 
 
     def _preprocess(self,
-                   in_tensor: np.ndarray,
-                   ) -> np.ndarray:
+                    in_tensor: np.ndarray,
+                    ) -> np.ndarray:
         """前処理
         1. 画像のりサイズ
         2. 標準化
@@ -188,7 +219,7 @@ class PoseNetPredictor:
 
     def predict(self,
                 src_img: np.ndarray,
-                ) -> Tuple[np.ndarray, PoseNetHumanPoseKeypoints]:
+                ) -> Person:
         """推論
 
         Args:
@@ -202,7 +233,6 @@ class PoseNetPredictor:
 
         # 前処理
         in_tensor = self._preprocess(src_img)
-        
         
         # 前処理済みの画像を入力
         self._interpreter.set_tensor(self._input_index, in_tensor)
@@ -218,23 +248,23 @@ class PoseNetPredictor:
         raw_heatmap = np.squeeze(raw_heatmap) # (N,C,H,W) -> (C,H,W)
         raw_offset = np.squeeze(raw_offset) # (N,C,H,W) -> (C,H,W)
 
-        # 関節点の取得
-        keypoints_with_scores = self._build_keypoints(raw_heatmap,
-                                                      raw_offset,
-                                                     )
-        keypoints = self._person_from_keypoints_with_scores(keypoints_with_scores,
-                                                            img_height,
-                                                            img_width,
-                                                            )
+        # スコア付き関節点の取得
+        keypoints_with_scores = self._build_keypoints_with_score(
+            raw_heatmap, # heatmap : (H,W,17)
+            raw_offset,  # offset : (H,W,34)
+        )
 
+        person = self._person_from_keypoints_with_scores(keypoints_with_scores,
+                                                         img_height,
+                                                         img_width,
+                                                         )
         
-        
-        return dst_img, keypoints
+        return person
     
-    def _build_keypoints(self,
-                         heatmap: np.ndarray,
-                         offset: np.ndarray,
-                         ) -> np.ndarray:
+    def _build_keypoints_with_score(self,
+                                    heatmap: np.ndarray,
+                                    offset: np.ndarray,
+                                    ) -> np.ndarray:
         """ヒートマップとオフセットのスコアマップを作成
 
         Args:
@@ -242,7 +272,7 @@ class PoseNetPredictor:
             offset (np.ndarray): 各四肢に対応する2Dベクトル場の特徴マップ (H,W,34)
 
         Returns:
-            np.ndarray: 各関節点のスコアマップ (17,3) index: [(xs,ys), (xe,ye), score]
+            np.ndarray: 各関節点のスコアマップ (17,3) index: [y, x, score]
         """
 
         # 関節点数
@@ -285,40 +315,84 @@ class PoseNetPredictor:
         return 1 / (1 + np.exp(-x))
     
     def _person_from_keypoints_with_scores(self, 
-                         keypoints_with_scores: np.ndarray,
-                         height: int,
-                         width: int,
-                         ) -> PoseNetHumanPoseKeypoints:
+                                           keypoints_with_scores: np.ndarray,
+                                           height: int,
+                                           width: int,
+                                           ) -> Person:
         """PoseNetで定義されているキーポイント(各関節)を取得する
 
         Args:
-            keypoints_with_scores (np.ndarray): 各関節点のスコアマップ (H,W,17)
+            keypoints_with_scores (np.ndarray): 各関節点のスコアマップ (17,3) index: [y, x, score]
+
+            'HumanPoseKeypoints',
+            [
+                'nose',           # 0
+                'left_eye',       # 1
+                'right_eye',      # 2
+                'left_ear',       # 3
+                'right_ear',      # 4
+                'left_shoulder',  # 5
+                'right_shoulder', # 6
+                'left_elbow',     # 7
+                'right_elbow',    # 8
+                'left_wrist',     # 9
+                'right_wrist',    # 10
+                'left_hip',       # 11
+                'right_hip',      # 12
+                'left_knee',      # 13
+                'right_knee',     # 14
+                'left_ankle',     # 15
+                'right_ankle'     # 16
+            ]
         
         Returns:
-            PoseNetHumanPoseKeypoints: [x, y]
-
-            PoseNetHumanPoseKeypoints = namedtuple(
-            'HumanPoseKeypoints',
-                [
-                    'nose',           # 0 [x, y]
-                    'left_eye',       # 1
-                    'right_eye',      # 2
-                    'left_ear',       # 3
-                    'right_ear',      # 4
-                    'left_shoulder',  # 5
-                    'right_shoulder', # 6
-                    'left_elbow',     # 7
-                    'right_elbow',    # 8
-                    'left_wrist',     # 9
-                    'right_wrist',    # 10
-                    'left_hip',       # 11
-                    'right_hip',      # 12
-                    'left_knee',      # 13
-                    'right_knee',     # 14
-                    'left_ankle',     # 15
-                    'right_ankle'     # 16
-                ]
-            )
+            Person: 人間オブジェクト
         """
-        pass
+        
+        kps_x = keypoints_with_scores[:, 1]
+        kps_y = keypoints_with_scores[:, 0]
+        scores = keypoints_with_scores[:, 2]
+
+        # 画像座標系におけるキーポイント座標に変換
+        keypoints = []
+
+        min_x : float = 10000000
+        min_y : float = 10000000
+        max_x : float = -1
+        max_y : float = -1
+        for i in range(scores.shape[0]):
+            img_kps_x = int(width * kps_x[i])
+            img_kps_y = int(height * kps_y[i])
+            score = scores[i]
+            
+            keypoints.append(
+            KeyPoint(BodyPart(i),
+                     Point(img_kps_x, img_kps_y), 
+                     score)
+            )
+
+            if img_kps_x < min_x:
+                min_x = img_kps_x
+
+            if img_kps_y < min_y:
+                min_y = img_kps_y
+
+            if img_kps_x > max_x:
+                max_x = img_kps_x
+            
+            if img_kps_y > max_y:
+                max_y = img_kps_y
+
+        
+        bbox = BBox(ps=Point(min_x, min_y), pe=Point(max_x, max_y))
+
+        # 各キーポイントに付随するスコアの平均値と閾値で人間の確信度を計算
+        scores_above_threshold = list(
+            filter(lambda x : x > self.cli_args.keypoints_threshold, scores)
+        )
+        person_score : float = np.average(scores_above_threshold)
+
+        return Person(keypoints, bbox, person_score)
+    
+
 
