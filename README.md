@@ -9,6 +9,7 @@ App(Web, Mobile) about pose estimation for human
 
 ## Human Estimation Model
 + PoseNet
++ MoveNet
 + OpenPose
 
 
