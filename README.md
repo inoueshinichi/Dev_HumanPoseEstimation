@@ -1,5 +1,5 @@
 # Dev_HumanPoseEstimation
-App(Web, Mobile) about pose estimation for human
+単純なWebApiを用いた人物姿勢推定 for ジム
 
 ## 3 layers web application
 + Infrustracture : Docker
