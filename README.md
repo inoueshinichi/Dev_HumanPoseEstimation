@@ -1,5 +1,5 @@
 # Dev_HumanPoseEstimation
-Web APIベースの人物姿勢推定システムの開発 for ジム
+人物姿勢推定システムの開発 for ジム
 
 ## 背景
 + 技術で役に立つ
